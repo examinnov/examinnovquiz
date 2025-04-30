@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quick Learn</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #f0f4f8;
+      color: #333;
+    }
+    header {
+      background: linear-gradient(135deg, #4facfe, #00f2fe);
+      padding: 2rem;
+      text-align: center;
+      color: white;
+    }
+    .search-section {
+      text-align: center;
+      padding: 1rem;
+      background: #fff;
+    }
+    .search-section input {
+      width: 90%;
+      max-width: 400px;
+      padding: 1rem;
+      font-size: 1rem;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+    .results {
+      padding: 1rem;
+    }
+    .school-result {
+      background: #fff;
+      margin: 1rem auto;
+      padding: 1rem;
+      max-width: 600px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .school-result button {
+      background: #1976d2;
+      color: white;
+      padding: 0.6rem 1rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .install-cta {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #4caf50;
+      color: white;
+      padding: 1rem 1.5rem;
+      border: none;
+      border-radius: 30px;
+      font-size: 1rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      animation: bounce 1.5s infinite;
+      z-index: 10001;
+      cursor: pointer;
+      display: none;
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    #quizFrameContainer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: white;
+      z-index: 9999;
+    }
+    #quizFrameContainer iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      opacity: 0;
+      transition: opacity 0.5s;
+    }
+    #quizFrameContainer button {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 10000;
+      background: red;
+      color: white;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 6px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Quick Learn</h1>
+  </header>
+
+  <section class="search-section">
+    <input type="text" id="search" placeholder="Search your school by name or code...">
+  </section>
+
+  <div class="results" id="results">
+    <p style="text-align:center;color:#777;">Loading schools...</p>
+  </div>
+
+  <div id="quizFrameContainer">
+    <button onclick="closeQuiz()">✖ Close</button>
+    <iframe id="quizFrame"></iframe>
+  </div>
+
+  <button id="installBtn" class="install-cta">📲 Install App</button>
+
+  <script>
+    let deferredPrompt;
+    const installBtn = document.getElementById('installBtn');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.style.display = 'block';
+    });
+
+    installBtn.addEventListener('click', () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(choice => {
+          if (choice.outcome === 'accepted') {
+            console.log('User installed the app');
+          }
+          deferredPrompt = null;
+          installBtn.style.display = 'none';
+        });
+      }
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js')
+        .then(() => console.log('Service worker registered'))
+        .catch(err => console.error('SW failed:', err));
+    }
+
+    let schoolsData = [];
+
+    async function fetchSheetData() {
+      const proxy = 'https://api.allorigins.win/raw?url=';
+      const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ8003MCgBh2J7Iycg3w8YjYhgr6FI4oWZxw10T0qhx506zmmlEGut9cM86RpKkdWZ-Ik4frLU6fV9O/pub?output=csv';
+      try {
+        const response = await fetch(proxy + encodeURIComponent(sheetUrl));
+        const csv = await response.text();
+        const rows = csv.split('\\n').slice(1);
+        schoolsData = rows.map(row => {
+          const [name, code, district, link] = row.split(',');
+          return {
+            school_name: name?.trim(),
+            school_number: code?.trim(),
+            district: district?.trim(),
+            quiz_link: link?.trim()
+          };
+        });
+        document.getElementById('results').innerHTML = '<p style="text-align:center;">Search for your school above</p>';
+      } catch (e) {
+        document.getElementById('results').innerHTML = '<p style="text-align:center;color:red;">Failed to load data</p>';
+      }
+    }
+
+    function displayResults(query = '') {
+      if (!query) {
+        document.getElementById('results').innerHTML = '<p style="text-align:center;">Search for your school above</p>';
+        return;
+      }
+      const results = schoolsData.filter(s =>
+        s.school_name?.toLowerCase().includes(query.toLowerCase()) ||
+        s.school_number?.includes(query)
+      );
+      const html = results.map(s => `
+        <div class="school-result">
+          <strong>${s.school_name}</strong><br>
+          Code: ${s.school_number}<br>
+          District: ${s.district}<br>
+          <button onclick="openQuiz('${s.quiz_link}')">Open Quiz</button>
+        </div>`).join('');
+      document.getElementById('results').innerHTML = html || '<p style="text-align:center;">No schools found.</p>';
+    }
+
+    function openQuiz(url) {
+      if (!url || !url.startsWith('http')) {
+        alert("Invalid quiz link.");
+        return;
+      }
+      const iframe = document.getElementById('quizFrame');
+      document.getElementById('quizFrameContainer').style.display = 'block';
+      iframe.style.opacity = '0';
+      iframe.src = '';
+      setTimeout(() => {
+        iframe.onload = () => { iframe.style.opacity = '1'; };
+        iframe.src = url;
+      }, 100);
+    }
+
+    function closeQuiz() {
+      const iframe = document.getElementById('quizFrame');
+      iframe.src = '';
+      iframe.style.opacity = '0';
+      document.getElementById('quizFrameContainer').style.display = 'none';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchSheetData();
+      document.getElementById('search').addEventListener('input', (e) => {
+        displayResults(e.target.value);
+      });
+    });
+  </script>
+</body>
+</html>
